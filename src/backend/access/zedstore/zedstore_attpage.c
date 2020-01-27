@@ -463,6 +463,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 	zsbt_attr_repack_context cxt;
 	bool		split = false;
 	bool		merge_pages = false;
+	attstream_buffer rightattbuf;
 
 	Assert (attbuf->len - attbuf->cursor > 0);
 
@@ -622,7 +623,6 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		 * without making any progress.
 		 */
 		zstid		mintid = attbuf->firsttid;
-		attstream_buffer rightattbuf;
 
 #if 0
 		if (upperstream && lowerstream)
@@ -714,6 +714,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		int			itemno;
 		ZSBtreePageOpaque *nextopaque;
 		ZSAttStream *nextlowerstream;
+		attstream_buffer tmpbuf;
 
 		/*
 		 * Find next page and and insert any data that could not be packed
@@ -750,7 +751,8 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		/*
 		 * Cleanup
 		 */
-		attbuf->cursor = attbuf->len;
+		pfree(attbuf->data);
+		memcpy(attbuf, &rightattbuf, sizeof(attstream_buffer));
 	}
 }
 
