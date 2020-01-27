@@ -408,6 +408,27 @@ get_page_upperstream(Page page)
 	return upperstream;
 }
 
+static int
+zsbt_binsrch_internal(zstid key, ZSBtreeInternalPageItem *arr, int arr_elems)
+{
+	int			low,
+		high,
+		mid;
+
+	low = 0;
+	high = arr_elems;
+	while (high > low)
+	{
+		mid = low + (high - low) / 2;
+
+		if (key >= arr[mid].tid)
+			low = mid + 1;
+		else
+			high = mid;
+	}
+	return low - 1;
+}
+
 /*
  * Add data to attribute leaf pages.
  *
@@ -430,6 +451,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 	Form_pg_attribute attr = &rel->rd_att->attrs[attno - 1];
 	Buffer		origbuf;
 	Page		origpage;
+	Buffer		parentbuf;
 	ZSBtreePageOpaque *origpageopaque;
 	ZSAttStream *lowerstream;
 	ZSAttStream *upperstream;
@@ -681,12 +703,55 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			pfree(attbuf->data);
 			memcpy(attbuf, &rightattbuf, sizeof(attstream_buffer));
 		}
-		else if (merge_pages)
-		{
-			attbuf->cursor = attbuf->len;
-		}
 	}
 	zsbt_attr_repack_writeback_pages(&cxt, rel, attno, origbuf);
+
+	if (merge_pages)
+	{
+		ZSBtreeInternalPageItem *parentitems;
+		int			parentnitems;
+		Page		parentpage;
+		int			itemno;
+		ZSBtreePageOpaque *nextopaque;
+		ZSAttStream *nextlowerstream;
+
+		/*
+		 * Find next page and and insert any data that could not be packed
+		 * into current page.
+		 */
+		Buffer nextbuf =  ReadBuffer(rel, origpageopaque->zs_next);
+		LockBuffer(nextbuf, BUFFER_LOCK_EXCLUSIVE);
+		nextopaque = ZSBtreePageGetOpaque(BufferGetPage(nextbuf));
+		parentbuf = zsbt_descend(rel, attno, nextopaque->zs_lokey, origpageopaque->zs_level + 1, false);
+		parentpage = BufferGetPage(parentbuf);
+
+		parentitems = ZSBtreeInternalPageGetItems(parentpage);
+		parentnitems = ZSBtreeInternalPageGetNumItems(parentpage);
+		itemno = zsbt_binsrch_internal(nextopaque->zs_lokey, parentitems, parentnitems);
+		UnlockReleaseBuffer(parentbuf);
+
+		/*
+		 * Update the internal btree downlinks and the next page's lokey
+		 */
+		parentitems[itemno].tid = attbuf->firsttid;
+		origpageopaque->zs_hikey = attbuf->firsttid;
+		nextopaque->zs_lokey = attbuf->firsttid;
+
+		/*
+		 * Merge the items in the pages
+		 */
+		nextlowerstream = get_page_lowerstream(BufferGetPage(nextbuf));
+		merge_attstream(attr, attbuf, nextlowerstream);
+
+		zsbt_attr_repack_init(&cxt, attno, nextbuf, false);
+		zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
+		zsbt_attr_repack_writeback_pages(&cxt, rel, attno, nextbuf);
+
+		/*
+		 * Cleanup
+		 */
+		attbuf->cursor = attbuf->len;
+	}
 }
 
 /*
