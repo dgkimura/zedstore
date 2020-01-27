@@ -963,6 +963,7 @@ extern Buffer zsbt_find_and_lock_leaf_containing_tid(Relation rel, AttrNumber at
 extern bool zsbt_page_is_expected(Relation rel, AttrNumber attno, zstid key, int level, Buffer buf);
 extern void zsbt_wal_log_leaf_items(Relation rel, AttrNumber attno, Buffer buf, OffsetNumber off, bool replace, List *items, struct zs_pending_undo_op *undo_op);
 extern void zsbt_wal_log_rewrite_pages(Relation rel, AttrNumber attno, List *buffers, struct zs_pending_undo_op *undo_op);
+extern zs_split_stack *zsbt_update_page(Relation rel, AttrNumber attno, Buffer buf, Page newpage);
 
 /*
  * Return the value of row identified with 'tid' in a scan.

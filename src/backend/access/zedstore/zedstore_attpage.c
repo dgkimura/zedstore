@@ -31,6 +31,8 @@
 #include "access/zedstore_wal.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
+#include "storage/buf_internals.h"
+#include "storage/lwlock.h"
 #include "utils/datum.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -408,27 +410,6 @@ get_page_upperstream(Page page)
 	return upperstream;
 }
 
-static int
-zsbt_binsrch_internal(zstid key, ZSBtreeInternalPageItem *arr, int arr_elems)
-{
-	int			low,
-		high,
-		mid;
-
-	low = 0;
-	high = arr_elems;
-	while (high > low)
-	{
-		mid = low + (high - low) / 2;
-
-		if (key >= arr[mid].tid)
-			low = mid + 1;
-		else
-			high = mid;
-	}
-	return low - 1;
-}
-
 /*
  * Add data to attribute leaf pages.
  *
@@ -708,13 +689,11 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 
 	if (merge_pages)
 	{
-		ZSBtreeInternalPageItem *parentitems;
-		int			parentnitems;
-		Page		parentpage;
-		int			itemno;
 		ZSBtreePageOpaque *nextopaque;
 		ZSAttStream *nextlowerstream;
 		attstream_buffer tmpbuf;
+		zs_split_stack *stack;
+		Page		nextpage;
 
 		/*
 		 * Find next page and and insert any data that could not be packed
@@ -722,31 +701,36 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		 */
 		Buffer nextbuf =  ReadBuffer(rel, origpageopaque->zs_next);
 		LockBuffer(nextbuf, BUFFER_LOCK_EXCLUSIVE);
-		nextopaque = ZSBtreePageGetOpaque(BufferGetPage(nextbuf));
-		parentbuf = zsbt_descend(rel, attno, nextopaque->zs_lokey, origpageopaque->zs_level + 1, false);
-		parentpage = BufferGetPage(parentbuf);
 
-		parentitems = ZSBtreeInternalPageGetItems(parentpage);
-		parentnitems = ZSBtreeInternalPageGetNumItems(parentpage);
-		itemno = zsbt_binsrch_internal(nextopaque->zs_lokey, parentitems, parentnitems);
-		UnlockReleaseBuffer(parentbuf);
-
-		/*
-		 * Update the internal btree downlinks and the next page's lokey
-		 */
-		parentitems[itemno].tid = attbuf->firsttid;
-		origpageopaque->zs_hikey = attbuf->firsttid;
-		nextopaque->zs_lokey = attbuf->firsttid;
+		nextpage = PageGetTempPageCopy(BufferGetPage(nextbuf));
 
 		/*
 		 * Merge the items in the pages
 		 */
-		nextlowerstream = get_page_lowerstream(BufferGetPage(nextbuf));
+		nextlowerstream = get_page_lowerstream(nextpage);
 		merge_attstream(attr, attbuf, nextlowerstream);
 
 		zsbt_attr_repack_init(&cxt, attno, nextbuf, false);
 		zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
-		zsbt_attr_repack_writeback_pages(&cxt, rel, attno, nextbuf);
+
+		/*
+		 * Update the internal btree downlinks and the next page's lokey
+		 */
+		/* FIXME: This should be represented in a zs_split_stack */
+		origpageopaque->zs_hikey = attbuf->firsttid;
+
+		/* FIXME: This should have been set up in zsbt_attr_* functions */
+		nextopaque = ZSBtreePageGetOpaque(cxt.currpage);
+		nextopaque->zs_lokey = attbuf->firsttid;
+
+		/*
+		 * Update downlink from parent
+		 */
+		stack = zsbt_update_page(rel, attno, nextbuf, cxt.currpage);
+
+		ZSBtreePageGetOpaque(cxt.currpage)->zs_lokey = attbuf->firsttid;
+
+		zs_apply_split_changes(rel, stack, /*FIXME:undo_op*/ NULL);
 
 		/*
 		 * Cleanup

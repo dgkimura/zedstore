@@ -1000,3 +1000,44 @@ zsbt_rewrite_pages_redo(XLogReaderState *record)
 	 * a big deal in practice.
 	 */
 }
+
+zs_split_stack *
+zsbt_update_page(Relation rel, AttrNumber attno, Buffer buf, Page newpage)
+{
+	Buffer		parentbuf;
+	int			parentnitems;
+	Page		parentpage;
+	int			itemno;
+	MemoryContext oldcxt;
+
+	zs_split_stack *stack;
+	zs_split_stack *stack_head;
+	zs_split_stack *stack_tail;
+
+	stack = zs_new_split_stack_entry(buf, newpage);
+	stack_head = stack_tail = stack;
+
+	do
+	{
+		parentbuf = zsbt_descend(rel, attno, ZSBtreePageGetOpaque(newpage)->zs_lokey, ZSBtreePageGetOpaque(newpage)->zs_level + 1, false);
+		parentpage = BufferGetPage(parentbuf);
+
+		Page		newparentpage = PageGetTempPageCopySpecial(parentpage);
+		ZSBtreeInternalPageItem *newitems = ZSBtreeInternalPageGetItems(newparentpage);
+
+		itemno = zsbt_binsrch_internal(ZSBtreePageGetOpaque(newpage)->zs_hikey,
+				ZSBtreeInternalPageGetItems(parentpage),
+				ZSBtreeInternalPageGetNumItems(parentpage));
+		memcpy(newitems, ZSBtreeInternalPageGetItems(parentpage), ZSBtreeInternalPageGetNumItems(parentpage) * sizeof(ZSBtreeInternalPageItem));
+		newitems[itemno].tid = ZSBtreePageGetOpaque(newpage)->zs_lokey;
+
+		((PageHeader) newparentpage)->pd_lower += ZSBtreeInternalPageGetNumItems(parentpage) * sizeof(ZSBtreeInternalPageItem);
+
+		stack = zs_new_split_stack_entry(parentbuf, newparentpage);
+		stack_tail->next = stack;
+		stack_tail = stack;
+	}
+	while (ZSBtreePageGetOpaque(parentpage)->zs_lokey != MinZSTid && ZSBtreePageGetOpaque(parentpage)->zs_hikey != MaxPlusOneZSTid);
+
+	return stack_head;
+}
