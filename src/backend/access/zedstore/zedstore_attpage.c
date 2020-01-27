@@ -440,6 +440,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 	zstid 		splittid;
 	zsbt_attr_repack_context cxt;
 	bool		split = false;
+	bool		merge_pages = false;
 
 	Assert (attbuf->len - attbuf->cursor > 0);
 
@@ -659,17 +660,18 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			 */
 			split_attstream_buffer(attbuf, &rightattbuf, splittid);
 			split = true;
+			merge_pages = true;
 		}
 
 		zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 
-		while (attbuf->cursor < attbuf->len && (split || attbuf->firsttid <= mintid))
+		while (attbuf->cursor < attbuf->len && (split || attbuf->firsttid <= mintid) && !merge_pages)
 		{
 			zsbt_attr_repack_newpage(&cxt, attbuf->firsttid);
 			zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 		}
 
-		if (split)
+		if (split && !merge_pages)
 		{
 			/*
 			 * Make attbuf represent the chunks that were on the right hand
@@ -678,6 +680,10 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			Assert(attbuf->cursor == attbuf->len);
 			pfree(attbuf->data);
 			memcpy(attbuf, &rightattbuf, sizeof(attstream_buffer));
+		}
+		else if (merge_pages)
+		{
+			attbuf->cursor = attbuf->len;
 		}
 	}
 	zsbt_attr_repack_writeback_pages(&cxt, rel, attno, origbuf);
