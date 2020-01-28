@@ -1009,6 +1009,7 @@ zsbt_update_page(Relation rel, AttrNumber attno, Buffer buf, Page newpage)
 	Page		parentpage;
 	int			itemno;
 	MemoryContext oldcxt;
+	int			currlevel = ZSBtreePageGetOpaque(newpage)->zs_level;
 
 	zs_split_stack *stack;
 	zs_split_stack *stack_head;
@@ -1019,7 +1020,7 @@ zsbt_update_page(Relation rel, AttrNumber attno, Buffer buf, Page newpage)
 
 	do
 	{
-		parentbuf = zsbt_descend(rel, attno, ZSBtreePageGetOpaque(newpage)->zs_lokey, ZSBtreePageGetOpaque(newpage)->zs_level + 1, false);
+		parentbuf = zsbt_descend(rel, attno, ZSBtreePageGetOpaque(newpage)->zs_lokey, ++currlevel, false);
 		parentpage = BufferGetPage(parentbuf);
 
 		Page		newparentpage = PageGetTempPageCopySpecial(parentpage);
