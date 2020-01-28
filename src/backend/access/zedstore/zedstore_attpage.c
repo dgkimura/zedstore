@@ -674,6 +674,10 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 		}
 
+		/*
+		 * TODO Fix logic here as split and merge_pages will always be true
+		 * together so this block will never be hit
+		 */
 		if (split && !merge_pages)
 		{
 			/*
@@ -734,6 +738,11 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 
 		/*
 		 * Cleanup
+		 */
+		/*
+		 * TODO: Consider case where attbuf still has data. It needs to be
+		 * merged together with rightattbuf. This will happen when the nextpage
+		 * doesn't have enough space.
 		 */
 		pfree(attbuf->data);
 		memcpy(attbuf, &rightattbuf, sizeof(attstream_buffer));
