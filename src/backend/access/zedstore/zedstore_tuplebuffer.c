@@ -369,16 +369,15 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 		for(;;)
 		{
 			Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
-			LockBuffer(metabuf, LW_EXCLUSIVE);
+			LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 			Page metapage = BufferGetPage(metabuf);
 			ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
-			if (tid >= metpg->tree_root_dir[attno].lasttidinserted)
+			if (chunks->firsttid - 1 == metapg->tree_root_dir[attno].lasttidinserted)
 			{
 				/*
 				 * We can insert now.
 				 */
 				UnlockReleaseBuffer(metabuf);
-				zsbt_attbuffer_spool(rel, attno, attbuffer, 1, &tid, &datum, &isnull);
 				break;
 			}
 			UnlockReleaseBuffer(metabuf);
@@ -392,10 +391,10 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 		START_CRIT_SECTION();
 
 		Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
-		LockBuffer(metabuf, LW_EXCLUSIVE);
+		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 		Page metapage = BufferGetPage(metabuf);
 		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
-		metpg->tree_root_dir[attno].lasttidinserted = chunks->firsttid == 0
+		metapg->tree_root_dir[attno].lasttidinserted = chunks->firsttid == 0
 			? tmp_last_tid : chunks->firsttid - 1;
 
 		MarkBufferDirty(metabuf);
