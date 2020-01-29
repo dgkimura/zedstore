@@ -525,6 +525,7 @@ zs_datumCopy(Datum value, bool typByVal, int typLen)
 typedef struct ZSRootDirItem
 {
 	BlockNumber root;
+	zstid lasttidinserted;
 } ZSRootDirItem;
 
 typedef struct ZSMetaPage

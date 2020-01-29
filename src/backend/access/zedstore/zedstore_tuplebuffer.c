@@ -361,7 +361,50 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 	while ((all && chunks->len - chunks->cursor > 0) ||
 		   chunks->len - chunks->cursor > ATTBUFFER_SIZE)
 	{
+		zstid tmp_last_tid = chunks->lasttid;
+
+		/*
+		 * Wait until lasttidinserted of attno. TODO: Fixup to use latch maybe?
+		 */
+		for(;;)
+		{
+			Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
+			LockBuffer(metabuf, LW_EXCLUSIVE);
+			Page metapage = BufferGetPage(metabuf);
+			ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
+			if (tid >= metpg->tree_root_dir[attno].lasttidinserted)
+			{
+				/*
+				 * We can insert now.
+				 */
+				UnlockReleaseBuffer(metabuf);
+				zsbt_attbuffer_spool(rel, attno, attbuffer, 1, &tid, &datum, &isnull);
+				break;
+			}
+			UnlockReleaseBuffer(metabuf);
+		}
+
 		zsbt_attr_add(rel, attno, chunks);
+
+		/*
+		 * Update the lasttidinserted of attno so that other inserts can continue...
+		 */
+		START_CRIT_SECTION();
+
+		Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
+		LockBuffer(metabuf, LW_EXCLUSIVE);
+		Page metapage = BufferGetPage(metabuf);
+		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
+		metpg->tree_root_dir[attno].lasttidinserted = chunks->firsttid == 0
+			? tmp_last_tid : chunks->firsttid - 1;
+
+		MarkBufferDirty(metabuf);
+
+		/* TODO: Add xlog if needed. */
+
+		END_CRIT_SECTION();
+
+		UnlockReleaseBuffer(metabuf);
 	}
 }
 
