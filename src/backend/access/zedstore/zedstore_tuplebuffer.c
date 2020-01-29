@@ -361,17 +361,20 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 	while ((all && chunks->len - chunks->cursor > 0) ||
 		   chunks->len - chunks->cursor > ATTBUFFER_SIZE)
 	{
-		zstid tmp_last_tid = chunks->lasttid;
-
 		/*
 		 * Wait until lasttidinserted of attno. TODO: Fixup to use latch maybe?
 		 */
 		for(;;)
 		{
+			/*
+			 * Wait until column metapage indicates that all datums up to tid
+			 * we are want to insert has been pushed into the column's pages.
+			 */
 			Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
 			LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 			Page metapage = BufferGetPage(metabuf);
 			ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
+
 			if (chunks->firsttid - 1 == metapg->tree_root_dir[attno].lasttidinserted)
 			{
 				/*
@@ -383,7 +386,7 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 			UnlockReleaseBuffer(metabuf);
 		}
 
-		zsbt_attr_add(rel, attno, chunks);
+		zstid lasttid = zsbt_attr_add(rel, attno, chunks);
 
 		/*
 		 * Update the lasttidinserted of attno so that other inserts can continue...
@@ -394,8 +397,7 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 		Page metapage = BufferGetPage(metabuf);
 		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
-		metapg->tree_root_dir[attno].lasttidinserted = chunks->firsttid == 0
-			? tmp_last_tid : chunks->firsttid - 1;
+		metapg->tree_root_dir[attno].lasttidinserted = lasttid;
 
 		MarkBufferDirty(metabuf);
 

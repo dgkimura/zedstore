@@ -907,7 +907,7 @@ extern void zsbt_attr_begin_scan(Relation rel, TupleDesc tdesc, AttrNumber attno
 extern void zsbt_attr_end_scan(ZSAttrTreeScan *scan);
 extern bool zsbt_attr_scan_fetch_array(ZSAttrTreeScan *scan, zstid tid);
 
-extern void zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *newstream);
+extern zstid zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *newstream);
 extern void zsbt_attstream_change_redo(XLogReaderState *record);
 
 /* prototypes for functions in zedstore_attstream.c */

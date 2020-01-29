@@ -130,7 +130,10 @@ zsmeta_expand_metapage_for_new_attributes(Relation rel)
 
 		/* Initialize the new attribute roots to InvalidBlockNumber */
 		for (int i = metapg->nattributes; i < natts; i++)
+		{
 			metapg->tree_root_dir[i].root = InvalidBlockNumber;
+			metapg->tree_root_dir[i].lasttidinserted = 0;
+		}
 
 		metapg->nattributes = natts;
 		((PageHeader) page)->pd_lower = new_pd_lower;
@@ -194,7 +197,10 @@ zsmeta_initmetapage_internal(int natts)
 
 	metapg->nattributes = natts;
 	for (int i = 0; i < natts; i++)
+	{
 		metapg->tree_root_dir[i].root = InvalidBlockNumber;
+		metapg->tree_root_dir[i].lasttidinserted = 0;
+	}
 
 	((PageHeader) page)->pd_lower = new_pd_lower;
 	return page;
@@ -326,6 +332,7 @@ zsmeta_new_btree_root_redo(XLogReaderState *record)
 		Assert(metapg->tree_root_dir[attno].root == InvalidBlockNumber);
 
 		metapg->tree_root_dir[attno].root = rootblk;
+		metapg->tree_root_dir[attno].lasttidinserted = 0;
 
 		PageSetLSN(metapage, lsn);
 		MarkBufferDirty(metabuf);

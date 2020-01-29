@@ -57,7 +57,7 @@ static void wal_log_attstream_change(Relation rel, Buffer buf, ZSAttStream *atts
 
 static void zsbt_attr_repack_init(zsbt_attr_repack_context *cxt, AttrNumber attno, Buffer oldbuf, bool append);
 static void zsbt_attr_repack_newpage(zsbt_attr_repack_context *cxt, zstid nexttid);
-static void zsbt_attr_pack_attstream(Form_pg_attribute attr, attstream_buffer *buf, Page page);
+static zstid zsbt_attr_pack_attstream(Form_pg_attribute attr, attstream_buffer *buf, Page page);
 static void zsbt_attr_repack_writeback_pages(zsbt_attr_repack_context *cxt,
 											 Relation rel, AttrNumber attno,
 											 Buffer oldbuf);
@@ -424,7 +424,7 @@ get_page_upperstream(Page page)
  * This function handles decompressing and recompressing items, and splitting
  * the page, as needed.
  */
-void
+zstid
 zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 {
 	Form_pg_attribute attr = &rel->rd_att->attrs[attno - 1];
@@ -440,6 +440,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 	zstid 		splittid;
 	zsbt_attr_repack_context cxt;
 	bool		split = false;
+	zstid lasttid = MinZSTid;
 
 	Assert (attbuf->len - attbuf->cursor > 0);
 
@@ -521,7 +522,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			}
 			else
 				attbuf->cursor = attbuf->len;
-			return;
+			return MinZSTid; //FIXME
 		}
 	}
 	else
@@ -558,7 +559,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			END_CRIT_SECTION();
 
 			UnlockReleaseBuffer(origbuf);
-			return;
+			return MinZSTid; //FIXME
 		}
 
 		END_CRIT_SECTION();
@@ -661,12 +662,12 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			split = true;
 		}
 
-		zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
+		lasttid = zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 
 		while (attbuf->cursor < attbuf->len && (split || attbuf->firsttid <= mintid))
 		{
 			zsbt_attr_repack_newpage(&cxt, attbuf->firsttid);
-			zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
+			lasttid = zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 		}
 
 		if (split)
@@ -681,6 +682,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		}
 	}
 	zsbt_attr_repack_writeback_pages(&cxt, rel, attno, origbuf);
+	return lasttid;
 }
 
 /*
@@ -776,7 +778,7 @@ zsbt_attr_repack_newpage(zsbt_attr_repack_context *cxt, zstid nexttid)
  * 'attbuf' is updated in place, so that on exit, it contains the remaining chunks
  * that did not fit on 'page'.
  */
-static void
+static zstid
 zsbt_attr_pack_attstream(Form_pg_attribute attr, attstream_buffer *attbuf,
 						 Page page)
 {
@@ -879,6 +881,7 @@ zsbt_attr_pack_attstream(Form_pg_attribute attr, attstream_buffer *attbuf,
 	 * Chop off the part of the chunk stream in 'attbuf' that we wrote out.
 	 */
 	trim_attstream_upto_offset(attbuf, complete_chunks_len, lasttid);
+	return lasttid;
 }
 static void
 zsbt_attr_repack_writeback_pages(zsbt_attr_repack_context *cxt,
