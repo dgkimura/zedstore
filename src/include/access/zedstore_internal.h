@@ -96,6 +96,8 @@ typedef struct
 
 extern tuplebuffer *get_tuplebuffer(Relation rel);
 
+extern MemoryContext get_tuple_buffer_context();
+
 
 /*
  * attstream_decoder is used to unpack an attstream into tids/datums/isnulls.

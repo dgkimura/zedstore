@@ -53,8 +53,24 @@ static void zsbt_attbuffer_init(Form_pg_attribute attr, attbuffer *attbuffer);
 static void zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool all);
 static void tuplebuffer_kill_unused_reserved_tids(Relation rel, tuplebuffer *tupbuffer);
 
-static MemoryContext tuplebuffers_cxt = NULL;
 static struct tuplebuffers_hash *tuplebuffers = NULL;
+static MemoryContext tuplebuffers_cxt = NULL;
+
+/*
+ * TODO: Refactor. Seems kind of wonky (global). Maybe rename to
+ * get_or_set_tuple_buffer_context()?
+ */
+MemoryContext
+get_tuple_buffer_context()
+{
+	if (tuplebuffers_cxt == NULL)
+	{
+		tuplebuffers_cxt = AllocSetContextCreate(TopTransactionContext,
+												 "ZedstoreAMTupleBuffers",
+												 ALLOCSET_DEFAULT_SIZES);
+	}
+	return tuplebuffers_cxt;
+}
 
 tuplebuffer *
 get_tuplebuffer(Relation rel)
@@ -62,11 +78,9 @@ get_tuplebuffer(Relation rel)
 	bool		found;
 	tuplebuffer *tupbuffer;
 
-	if (tuplebuffers_cxt == NULL)
+	if (tuplebuffers == NULL)
 	{
-		tuplebuffers_cxt = AllocSetContextCreate(TopTransactionContext,
-												 "ZedstoreAMTupleBuffers",
-												 ALLOCSET_DEFAULT_SIZES);
+		tuplebuffers_cxt = get_tuple_buffer_context();
 		tuplebuffers = tuplebuffers_create(tuplebuffers_cxt, 10, NULL);
 	}
 retry:

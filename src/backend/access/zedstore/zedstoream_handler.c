@@ -266,7 +266,7 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	firsttid = zsbt_tid_multi_insert(relation, ntuples, xid, cid,
 									 INVALID_SPECULATIVE_TOKEN, InvalidUndoPtr);
 
-	oldcontext = MemoryContextSwitchTo(CurTransactionContext);
+	oldcontext = MemoryContextSwitchTo(get_tuple_buffer_context());
 
 	tids = palloc(ntuples * sizeof(zstid));
 	for (i = 0; i < ntuples; i++)
