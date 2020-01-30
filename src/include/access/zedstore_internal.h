@@ -57,6 +57,47 @@ typedef struct
 } attstream_buffer;
 
 /*
+ * TODO: Is this appropriate to have here?
+ */
+typedef struct
+{
+	zstid		buffered_tids[60];
+	Datum		buffered_datums[60];
+	bool		buffered_isnulls[60];
+	int			num_buffered_rows;
+
+	attstream_buffer chunks;
+
+} attbuffer;
+
+/*
+ * TODO: Is this appropriate to have here?
+ */
+typedef struct
+{
+	Oid			relid;			/* table's OID (hash key) */
+	char		status;			/* hash entry status */
+
+	int			natts;			/* # of attributes on table might change, if it's ALTERed */
+	attbuffer	*attbuffers;
+
+	zstid l;
+	List		*split_tids;
+
+	uint64		num_repeated_inserts;	/* number of inserted tuples since last flush */
+
+	TransactionId reserved_tids_xid;
+	CommandId	reserved_tids_cid;
+	zstid		reserved_tids_start;
+	zstid		reserved_tids_next;
+	zstid		reserved_tids_end;
+
+} tuplebuffer;
+
+extern tuplebuffer *get_tuplebuffer(Relation rel);
+
+
+/*
  * attstream_decoder is used to unpack an attstream into tids/datums/isnulls.
  */
 typedef struct

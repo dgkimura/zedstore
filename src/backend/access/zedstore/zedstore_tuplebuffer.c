@@ -33,35 +33,6 @@
 
 #define ATTBUFFER_SIZE				(1024 * 1024)
 
-typedef struct
-{
-	zstid		buffered_tids[60];
-	Datum		buffered_datums[60];
-	bool		buffered_isnulls[60];
-	int			num_buffered_rows;
-
-	attstream_buffer chunks;
-
-} attbuffer;
-
-typedef struct
-{
-	Oid			relid;			/* table's OID (hash key) */
-	char		status;			/* hash entry status */
-
-	int			natts;			/* # of attributes on table might change, if it's ALTERed */
-	attbuffer	*attbuffers;
-
-	uint64		num_repeated_inserts;	/* number of inserted tuples since last flush */
-
-	TransactionId reserved_tids_xid;
-	CommandId	reserved_tids_cid;
-	zstid		reserved_tids_start;
-	zstid		reserved_tids_next;
-	zstid		reserved_tids_end;
-
-} tuplebuffer;
-
 
 /* define hashtable mapping block numbers to PagetableEntry's */
 #define SH_PREFIX tuplebuffers
@@ -85,7 +56,7 @@ static void tuplebuffer_kill_unused_reserved_tids(Relation rel, tuplebuffer *tup
 static MemoryContext tuplebuffers_cxt = NULL;
 static struct tuplebuffers_hash *tuplebuffers = NULL;
 
-static tuplebuffer *
+tuplebuffer *
 get_tuplebuffer(Relation rel)
 {
 	bool		found;
@@ -110,6 +81,8 @@ retry:
 		natts = rel->rd_att->natts;
 		tupbuffer->attbuffers = palloc(natts * sizeof(attbuffer));
 		tupbuffer->natts = natts;
+		tupbuffer->split_tids = NULL;
+		tupbuffer->l = 0;
 
 		for (attno = 1; attno <= natts; attno++)
 		{
@@ -327,6 +300,56 @@ zsbt_attbuffer_spool(Relation rel, AttrNumber attno, attbuffer *attbuffer,
 /* flush */
 
 static void
+f(Relation rel, AttrNumber attno, attstream_buffer *chunks)
+{
+	/*
+	 * Wait until lasttidinserted of attno. TODO: Fixup to use latch maybe?
+	 */
+	for(;;)
+	{
+		/*
+		 * Wait until column metapage indicates that all datums up to tid
+		 * we are want to insert has been pushed into the column's pages.
+		 */
+		Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
+		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
+		Page metapage = BufferGetPage(metabuf);
+		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
+
+		if (chunks->firsttid - 1 == metapg->tree_root_dir[attno].lasttidinserted)
+		{
+			/*
+			 * We can insert now.
+			 */
+			UnlockReleaseBuffer(metabuf);
+			break;
+		}
+		UnlockReleaseBuffer(metabuf);
+	}
+
+	zstid lasttid = zsbt_attr_add(rel, attno, chunks);
+
+	/*
+	 * Update the lasttidinserted of attno so that other inserts can continue...
+	 */
+	START_CRIT_SECTION();
+
+	Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
+	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
+	Page metapage = BufferGetPage(metabuf);
+	ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
+	metapg->tree_root_dir[attno].lasttidinserted = lasttid;
+
+	MarkBufferDirty(metabuf);
+
+	/* TODO: Add xlog if needed. */
+
+	END_CRIT_SECTION();
+
+	UnlockReleaseBuffer(metabuf);
+}
+
+static void
 zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool all)
 {
 	int			num_encoded;
@@ -358,54 +381,26 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 		attbuffer->num_buffered_rows = num_remain;
 	}
 
+	tuplebuffer *tb = get_tuplebuffer(rel);
+	ListCell *currel = list_head(tb->split_tids);
+
 	while ((all && chunks->len - chunks->cursor > 0) ||
 		   chunks->len - chunks->cursor > ATTBUFFER_SIZE)
 	{
-		/*
-		 * Wait until lasttidinserted of attno. TODO: Fixup to use latch maybe?
-		 */
-		for(;;)
+		bool split = false;
+
+		attstream_buffer rightattbuf;
+		if (currel != NULL)
 		{
-			/*
-			 * Wait until column metapage indicates that all datums up to tid
-			 * we are want to insert has been pushed into the column's pages.
-			 */
-			Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
-			LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
-			Page metapage = BufferGetPage(metabuf);
-			ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
-
-			if (chunks->firsttid - 1 == metapg->tree_root_dir[attno].lasttidinserted)
-			{
-				/*
-				 * We can insert now.
-				 */
-				UnlockReleaseBuffer(metabuf);
-				break;
-			}
-			UnlockReleaseBuffer(metabuf);
+			currel = lnext(tb->split_tids, currel);
+			split_attstream_buffer(chunks, &rightattbuf, *((zstid*)lfirst(currel)));
+			split = true;
 		}
-
-		zstid lasttid = zsbt_attr_add(rel, attno, chunks);
-
-		/*
-		 * Update the lasttidinserted of attno so that other inserts can continue...
-		 */
-		START_CRIT_SECTION();
-
-		Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
-		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
-		Page metapage = BufferGetPage(metabuf);
-		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
-		metapg->tree_root_dir[attno].lasttidinserted = lasttid;
-
-		MarkBufferDirty(metabuf);
-
-		/* TODO: Add xlog if needed. */
-
-		END_CRIT_SECTION();
-
-		UnlockReleaseBuffer(metabuf);
+		f(rel, attno, chunks);
+		if (split)
+		{
+			memcpy(chunks, &rightattbuf, sizeof(attstream_buffer));
+		}
 	}
 }
 

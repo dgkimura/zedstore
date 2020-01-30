@@ -268,6 +268,16 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	for (i = 0; i < ntuples; i++)
 		tids[i] = firsttid + i;
 
+	tuplebuffer *tb = get_tuplebuffer(relation);
+	if (tb->l != MinZSTid - 1 && tids[0] - tb->l != 1)
+	{
+		/*
+		 * There is a hole in the tid allocation range.
+		 */
+		tb->split_tids = lappend(tb->split_tids, tids[0]);
+	}
+	tb->l = tids[ntuples - 1];
+
 	/*
 	 * We only need to check for table-level SSI locks. Our
 	 * new tuple can't possibly conflict with existing tuple locks, and
