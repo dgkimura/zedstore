@@ -255,6 +255,7 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	zstid		firsttid;
 	zstid	   *tids;
 	zstid	   *tid;
+	MemoryContext oldcontext;
 
 	if (ntuples == 0)
 	{
@@ -265,6 +266,8 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	firsttid = zsbt_tid_multi_insert(relation, ntuples, xid, cid,
 									 INVALID_SPECULATIVE_TOKEN, InvalidUndoPtr);
 
+	oldcontext = MemoryContextSwitchTo(CurTransactionContext);
+
 	tids = palloc(ntuples * sizeof(zstid));
 	for (i = 0; i < ntuples; i++)
 		tids[i] = firsttid + i;
@@ -273,13 +276,15 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	if (tb->l != MinZSTid - 1 && tids[0] - tb->l != 1)
 	{
 		tid = palloc(sizeof(zstid));
-		*tid = tids[0];
+		*tid = tids[0] - 1;
 		/*
 		 * There is a hole in the tid allocation range.
 		 */
 		tb->split_tids = lappend(tb->split_tids, tid);
 	}
 	tb->l = tids[ntuples - 1];
+
+	MemoryContextSwitchTo(oldcontext);
 
 	/*
 	 * We only need to check for table-level SSI locks. Our

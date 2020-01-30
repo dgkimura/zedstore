@@ -522,7 +522,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			}
 			else
 				attbuf->cursor = attbuf->len;
-			return MinZSTid; //FIXME
+			return newhdr.t_lasttid;
 		}
 	}
 	else

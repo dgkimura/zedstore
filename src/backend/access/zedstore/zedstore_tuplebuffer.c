@@ -392,8 +392,8 @@ zsbt_attbuffer_flush(Relation rel, AttrNumber attno, attbuffer *attbuffer, bool 
 		attstream_buffer rightattbuf;
 		if (currel != NULL)
 		{
-			currel = lnext(tb->split_tids, currel);
 			split_attstream_buffer(chunks, &rightattbuf, *((zstid*)lfirst(currel)));
+			currel = lnext(tb->split_tids, currel);
 			split = true;
 		}
 		f(rel, attno, chunks);
