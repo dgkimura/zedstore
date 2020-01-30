@@ -254,6 +254,7 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	TransactionId xid = GetCurrentTransactionId();
 	zstid		firsttid;
 	zstid	   *tids;
+	zstid	   *tid;
 
 	if (ntuples == 0)
 	{
@@ -271,10 +272,12 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	tuplebuffer *tb = get_tuplebuffer(relation);
 	if (tb->l != MinZSTid - 1 && tids[0] - tb->l != 1)
 	{
+		tid = palloc(sizeof(zstid));
+		*tid = tids[0];
 		/*
 		 * There is a hole in the tid allocation range.
 		 */
-		tb->split_tids = lappend(tb->split_tids, tids[0]);
+		tb->split_tids = lappend(tb->split_tids, tid);
 	}
 	tb->l = tids[ntuples - 1];
 
