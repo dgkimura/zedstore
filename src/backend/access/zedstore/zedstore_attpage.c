@@ -559,7 +559,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 			END_CRIT_SECTION();
 
 			UnlockReleaseBuffer(origbuf);
-			return MinZSTid; //FIXME
+			return attbuf->lasttid;
 		}
 
 		END_CRIT_SECTION();
