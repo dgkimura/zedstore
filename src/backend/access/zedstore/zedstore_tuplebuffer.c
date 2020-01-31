@@ -326,7 +326,7 @@ f(Relation rel, AttrNumber attno, attstream_buffer *chunks)
 		 * we are want to insert has been pushed into the column's pages.
 		 */
 		Buffer metabuf = ReadBuffer(rel, ZS_META_BLK);
-		LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
+		LockBuffer(metabuf, BUFFER_LOCK_SHARE);
 		Page metapage = BufferGetPage(metabuf);
 		ZSMetaPage *metapg = (ZSMetaPage *) PageGetContents(metapage);
 

@@ -266,13 +266,13 @@ zedstoream_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 	firsttid = zsbt_tid_multi_insert(relation, ntuples, xid, cid,
 									 INVALID_SPECULATIVE_TOKEN, InvalidUndoPtr);
 
-	oldcontext = MemoryContextSwitchTo(get_tuple_buffer_context());
-
 	tids = palloc(ntuples * sizeof(zstid));
 	for (i = 0; i < ntuples; i++)
 		tids[i] = firsttid + i;
 
 	tuplebuffer *tb = get_tuplebuffer(relation);
+
+	oldcontext = MemoryContextSwitchTo(get_tuple_buffer_context());
 	if (tb->l != MinZSTid - 1 && tids[0] - tb->l != 1)
 	{
 		tid = palloc(sizeof(zstid));
