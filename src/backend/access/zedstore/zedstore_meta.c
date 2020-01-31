@@ -133,6 +133,7 @@ zsmeta_expand_metapage_for_new_attributes(Relation rel)
 		{
 			metapg->tree_root_dir[i].root = InvalidBlockNumber;
 			metapg->tree_root_dir[i].lasttidinserted = 0;
+			ConditionVariableInit(&metapg->tree_root_dir[i].cv);
 		}
 
 		metapg->nattributes = natts;
@@ -199,7 +200,12 @@ zsmeta_initmetapage_internal(int natts)
 	for (int i = 0; i < natts; i++)
 	{
 		metapg->tree_root_dir[i].root = InvalidBlockNumber;
+		/*
+		 * TODO: 'lasttidinserted' should not insert for attno=0. Find other
+		 * places where this is being also done and eliminate.
+		 */
 		metapg->tree_root_dir[i].lasttidinserted = 0;
+		ConditionVariableInit(&metapg->tree_root_dir[i].cv);
 	}
 
 	((PageHeader) page)->pd_lower = new_pd_lower;
@@ -333,6 +339,7 @@ zsmeta_new_btree_root_redo(XLogReaderState *record)
 
 		metapg->tree_root_dir[attno].root = rootblk;
 		metapg->tree_root_dir[attno].lasttidinserted = 0;
+		ConditionVariableInit(&metapg->tree_root_dir[attno].cv);
 
 		PageSetLSN(metapage, lsn);
 		MarkBufferDirty(metabuf);

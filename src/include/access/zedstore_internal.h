@@ -16,6 +16,7 @@
 #include "access/zedstore_undolog.h"
 #include "lib/integerset.h"
 #include "storage/bufmgr.h"
+#include "storage/condition_variable.h"
 #include "storage/smgr.h"
 #include "utils/datum.h"
 
@@ -569,6 +570,7 @@ typedef struct ZSRootDirItem
 {
 	BlockNumber root;
 	zstid lasttidinserted;
+	ConditionVariable cv;
 } ZSRootDirItem;
 
 typedef struct ZSMetaPage

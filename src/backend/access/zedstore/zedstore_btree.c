@@ -355,7 +355,6 @@ zsbt_newroot(Relation rel, AttrNumber attno, int level, List *downlinks)
 			 attno, RelationGetRelationName(rel), metapg->nattributes);
 
 	metapg->tree_root_dir[attno].root = BufferGetBlockNumber(newrootbuf);
-	metapg->tree_root_dir[attno].lasttidinserted = 0;
 
 	stack1 = zs_new_split_stack_entry(metabuf, metapage);
 	stack2 = zs_new_split_stack_entry(newrootbuf, newrootpage);

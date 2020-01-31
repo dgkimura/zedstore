@@ -15,6 +15,7 @@
 #include "access/table.h"
 #include "access/zedstoream.h"
 #include "access/zedstore_internal.h"
+#include "pgstat.h"
 #include "miscadmin.h"
 #include "utils/datum.h"
 #include "utils/hashutils.h"
@@ -339,6 +340,7 @@ f(Relation rel, AttrNumber attno, attstream_buffer *chunks)
 			break;
 		}
 		UnlockReleaseBuffer(metabuf);
+		ConditionVariableSleep(&metapg->tree_root_dir[attno].cv, WAIT_EVENT_ZS_ATTR_TREE);
 	}
 
 	zstid lasttid = zsbt_attr_add(rel, attno, chunks);
@@ -361,6 +363,7 @@ f(Relation rel, AttrNumber attno, attstream_buffer *chunks)
 	END_CRIT_SECTION();
 
 	UnlockReleaseBuffer(metabuf);
+	ConditionVariableBroadcast(&metapg->tree_root_dir[attno].cv);
 }
 
 static void
