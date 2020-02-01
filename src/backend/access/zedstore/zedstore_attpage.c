@@ -589,7 +589,7 @@ zsbt_attr_add(Relation rel, AttrNumber attno, attstream_buffer *attbuf)
 		zsbt_attr_repack_newpage(&cxt, attbuf->firsttid);
 
 		/* write out the new data (or part of it) */
-		zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
+		lasttid = zsbt_attr_pack_attstream(attr, attbuf, cxt.currpage);
 	}
 	else
 	{
