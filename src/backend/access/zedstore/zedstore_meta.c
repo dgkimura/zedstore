@@ -132,7 +132,7 @@ zsmeta_expand_metapage_for_new_attributes(Relation rel)
 		for (int i = metapg->nattributes; i < natts; i++)
 		{
 			metapg->tree_root_dir[i].root = InvalidBlockNumber;
-			metapg->tree_root_dir[i].lasttidinserted = 0;
+			metapg->tree_root_dir[i].lasttidinserted = zsbt_get_last_tid(rel) - 1;
 			ConditionVariableInit(&metapg->tree_root_dir[i].cv);
 		}
 
